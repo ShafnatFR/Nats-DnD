@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Character, CharacterClassDef, Stats } from '../types';
-import { CLASSES } from '../constants';
-import { Shield, Zap, Sword, Brain, Activity, User, ChevronRight, CheckCircle2, X, HelpCircle, ArrowRight } from 'lucide-react';
+import { CLASSES, STARTING_ITEMS, XP_FORMULA } from '../constants';
+import { Shield, Scroll, Sword, Flame, Skull, ChevronRight, Ghost, X, HelpCircle, ArrowRight, Sun, Eye } from 'lucide-react';
 
 interface CharacterCreationProps {
   onCreate: (character: Character) => void;
@@ -13,23 +13,23 @@ const BASE_STAT = 10;
 const TUTORIAL_STEPS = [
   { 
     target: 'intro', 
-    title: "System Initialization", 
-    text: "Welcome to the AI Realm. You must configure your avatar before entering the simulation." 
+    title: "The Brand", 
+    text: "You are marked by Causality. Struggles await you, but so do moments of respite." 
   },
   { 
     target: 'identity', 
-    title: "Subject Identity", 
-    text: "Enter a unique identifier. This alias will be used in all simulation logs and interactions." 
+    title: "Identity", 
+    text: "Who were you before the darkness fell? Name your Struggler." 
   },
   { 
     target: 'class', 
-    title: "Class Protocol", 
-    text: "Select an archetype. Your choice determines starting HP, MP, and grants a unique attribute bonus." 
+    title: "Path of Struggle", 
+    text: "How do you fight against fate? With a massive blade, precision, or forbidden arts?" 
   },
   { 
     target: 'stats', 
-    title: "Attribute Allocation", 
-    text: "Distribute 10 Power Points across STR, DEX, INT, and CHA. Balance your build carefully." 
+    title: "Forging the Soul", 
+    text: "Distribute your potential. Strength to crush, Dexterity to evade, Intellect to understand, Charisma to lead." 
   },
 ];
 
@@ -88,7 +88,26 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
       maxHp: selectedClass.baseHp,
       mp: selectedClass.baseMp,
       maxMp: selectedClass.baseMp,
-      stats: finalStats
+      will: selectedClass.baseWill,
+      maxWill: selectedClass.baseWill,
+      stats: finalStats,
+      survival: {
+        hunger: 100,
+        thirst: 100,
+        fatigue: 100,
+        warmth: 100
+      },
+      progression: {
+        currentXp: 0,
+        maxXp: XP_FORMULA(1),
+        statPoints: 0,
+        skillPoints: 0
+      },
+      unlockedSkills: [],
+      currentLocationId: 'loc_start',
+      party: [],
+      inventory: STARTING_ITEMS,
+      gold: 10
     };
 
     onCreate(newCharacter);
@@ -112,21 +131,21 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
   const currentTutorial = TUTORIAL_STEPS[tutorialStep];
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-950 font-['Courier_Prime']">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-950 font-crimson">
       <div className="w-full max-w-4xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden flex flex-col md:flex-row rounded-sm relative">
         
         {/* Tutorial Backdrop & Overlay */}
         {showTutorial && (
           <>
-            <div className="absolute inset-0 bg-slate-950/80 z-40 backdrop-blur-[2px] transition-all" />
+            <div className="absolute inset-0 bg-slate-950/90 z-40 backdrop-blur-[2px] transition-all" />
             
             <div className="absolute bottom-6 left-0 right-0 z-[60] flex justify-center px-4 pointer-events-none">
-              <div className="bg-slate-900 border border-amber-600 p-5 rounded shadow-2xl max-w-lg w-full pointer-events-auto animate-fade-in">
+              <div className="bg-slate-900 border border-amber-800 p-5 rounded shadow-2xl max-w-lg w-full pointer-events-auto animate-fade-in">
                 <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2 text-amber-500">
+                  <div className="flex items-center gap-2 text-amber-600">
                     <HelpCircle size={18} />
-                    <span className="text-xs font-bold uppercase tracking-widest">
-                      Tutorial {tutorialStep + 1}/{TUTORIAL_STEPS.length}
+                    <span className="text-xs font-bold uppercase tracking-widest font-cinzel">
+                      Guidance {tutorialStep + 1}/{TUTORIAL_STEPS.length}
                     </span>
                   </div>
                   <button onClick={() => setShowTutorial(false)} className="text-slate-500 hover:text-stone-200">
@@ -134,21 +153,21 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
                   </button>
                 </div>
                 
-                <h3 className="text-lg font-bold text-stone-100 mb-1">{currentTutorial.title}</h3>
-                <p className="text-sm text-slate-400 mb-4">{currentTutorial.text}</p>
+                <h3 className="text-xl font-bold text-stone-100 mb-1 font-cinzel">{currentTutorial.title}</h3>
+                <p className="text-lg text-slate-400 mb-4 italic">{currentTutorial.text}</p>
                 
                 <div className="flex justify-end gap-2">
                   <button 
                     onClick={() => setShowTutorial(false)}
-                    className="px-3 py-1.5 text-xs text-slate-500 hover:text-stone-300 uppercase tracking-wider"
+                    className="px-3 py-1.5 text-xs text-slate-500 hover:text-stone-300 uppercase tracking-wider font-cinzel"
                   >
-                    Skip
+                    Dismiss
                   </button>
                   <button 
                     onClick={handleNextStep}
-                    className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-bold uppercase tracking-wider rounded flex items-center gap-1"
+                    className="px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-stone-100 text-xs font-bold uppercase tracking-wider rounded flex items-center gap-1 font-cinzel shadow-lg"
                   >
-                    {tutorialStep === TUTORIAL_STEPS.length - 1 ? 'Finish' : 'Next'}
+                    {tutorialStep === TUTORIAL_STEPS.length - 1 ? 'Begin' : 'Next'}
                     <ArrowRight size={14} />
                   </button>
                 </div>
@@ -160,30 +179,30 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
         {/* Left Column: Visuals & Class Selection */}
         <div className={`md:w-1/2 p-6 md:p-8 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950/50 ${showTutorial && tutorialStep === 0 ? 'relative z-50' : ''}`}>
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-amber-600 mb-2 flex items-center gap-2">
-              <Activity className="w-6 h-6" /> 
-              INITIALIZE_AVATAR
+            <h1 className="text-3xl font-bold text-amber-600 mb-2 flex items-center gap-3 font-cinzel">
+              <Flame className="w-6 h-6" /> 
+              Begin the Struggle
             </h1>
-            <p className="text-stone-400 text-sm">Configure your digital vessel for entry into the Realm.</p>
+            <p className="text-stone-400 text-lg italic">Even if you are forced to crawl, you must move forward.</p>
           </div>
 
           <div className={`mb-6 ${getHighlightClass('identity')}`}>
-            <label className="block text-xs uppercase tracking-widest text-slate-500 mb-2">Subject Name</label>
+            <label className="block text-xs uppercase tracking-widest text-slate-500 mb-2 font-cinzel">Identity</label>
             <div className="relative">
-              <User className="absolute left-3 top-3 w-5 h-5 text-slate-600" />
+              <Skull className="absolute left-3 top-3.5 w-5 h-5 text-slate-600" />
               <input 
                 type="text" 
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter Name..."
-                className="w-full bg-slate-900 border border-slate-700 text-stone-200 pl-10 pr-4 py-3 rounded focus:border-amber-600 focus:ring-1 focus:ring-amber-600/50 focus:outline-none transition-all placeholder:text-slate-700"
+                className="w-full bg-slate-900 border border-slate-700 text-stone-200 pl-10 pr-4 py-3 rounded focus:border-amber-700 focus:ring-1 focus:ring-amber-700/50 focus:outline-none transition-all placeholder:text-slate-700 font-cinzel text-lg"
                 disabled={showTutorial} 
               />
             </div>
           </div>
 
           <div className={getHighlightClass('class')}>
-            <label className="block text-xs uppercase tracking-widest text-slate-500 mb-3">Select Class Protocol</label>
+            <label className="block text-xs uppercase tracking-widest text-slate-500 mb-3 font-cinzel">Select Path</label>
             <div className="grid grid-cols-1 gap-3">
               {CLASSES.map((cls) => (
                 <button
@@ -196,17 +215,16 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
                       : 'bg-slate-900 border-slate-800 hover:border-slate-600'
                   }`}
                 >
-                  <div className={`p-2 rounded mr-4 ${selectedClass.id === cls.id ? 'bg-amber-600 text-slate-950' : 'bg-slate-800 text-slate-500'}`}>
-                    {cls.id === 'warrior' && <Sword size={18} />}
-                    {cls.id === 'mage' && <Zap size={18} />}
-                    {cls.id === 'rogue' && <CheckCircle2 size={18} />}
-                    {cls.id === 'diplomat' && <Brain size={18} />}
+                  <div className={`p-2 rounded mr-4 ${selectedClass.id === cls.id ? 'bg-amber-700 text-stone-100' : 'bg-slate-800 text-slate-500'}`}>
+                    {cls.id === 'struggler' && <Sword size={20} />}
+                    {cls.id === 'hawk' && <Sun size={20} />}
+                    {cls.id === 'brand' && <Eye size={20} />}
                   </div>
                   <div>
-                    <div className={`font-bold ${selectedClass.id === cls.id ? 'text-amber-500' : 'text-stone-300'}`}>
+                    <div className={`font-bold font-cinzel text-lg ${selectedClass.id === cls.id ? 'text-amber-500' : 'text-stone-300'}`}>
                       {cls.name}
                     </div>
-                    <div className="text-xs text-slate-500 line-clamp-1">{cls.description}</div>
+                    <div className="text-sm text-slate-400 line-clamp-1 italic">{cls.description}</div>
                   </div>
                 </button>
               ))}
@@ -218,9 +236,9 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
         <div className="md:w-1/2 p-6 md:p-8 flex flex-col">
           <div className="mb-8">
             <div className="flex justify-between items-end mb-4">
-              <label className="text-xs uppercase tracking-widest text-slate-500">Attribute Allocation</label>
-              <span className={`text-sm font-bold ${pointsRemaining === 0 ? 'text-emerald-500' : 'text-amber-600'}`}>
-                {pointsRemaining} PTS REMAINING
+              <label className="text-xs uppercase tracking-widest text-slate-500 font-cinzel">Fate Weaving</label>
+              <span className={`text-sm font-bold font-cinzel ${pointsRemaining === 0 ? 'text-emerald-500' : 'text-amber-600'}`}>
+                {pointsRemaining} Shards Remaining
               </span>
             </div>
 
@@ -231,9 +249,9 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
                 
                 return (
                   <div key={stat} className="flex items-center justify-between bg-slate-900/50 p-2 rounded border border-slate-800">
-                    <div className="flex items-center gap-3 w-24">
-                       <span className={`font-bold ${isBonus ? 'text-amber-500' : 'text-slate-400'}`}>{stat}</span>
-                       {isBonus && <span className="text-[10px] bg-amber-900/50 text-amber-500 px-1 rounded border border-amber-800">+2</span>}
+                    <div className="flex items-center gap-3 w-28">
+                       <span className={`font-bold font-cinzel ${isBonus ? 'text-amber-500' : 'text-slate-400'}`}>{stat}</span>
+                       {isBonus && <span className="text-[10px] bg-amber-900/50 text-amber-500 px-1 rounded border border-amber-800 font-sans">+2</span>}
                     </div>
                     
                     <div className="flex items-center gap-3">
@@ -244,7 +262,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
                       >
                         -
                       </button>
-                      <span className="w-8 text-center font-bold text-xl">{finalVal}</span>
+                      <span className="w-8 text-center font-bold text-xl font-cinzel">{finalVal}</span>
                       <button 
                         onClick={() => handleStatChange(stat, true)}
                         disabled={pointsRemaining <= 0 || showTutorial}
@@ -262,21 +280,25 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({ onCreate }) => {
           <div className="mt-auto">
             <div className="bg-slate-900 p-4 rounded border border-slate-800 mb-6">
               <div className="flex justify-between mb-2">
-                <span className="text-sm text-slate-500">Est. HP</span>
-                <span className="text-sm font-bold text-red-400">{selectedClass.baseHp}</span>
+                <span className="text-sm text-slate-500 font-cinzel">Health</span>
+                <span className="text-lg font-bold text-red-400 font-cinzel">{selectedClass.baseHp}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-slate-500">Est. MP</span>
-                <span className="text-sm font-bold text-blue-400">{selectedClass.baseMp}</span>
+                <span className="text-sm text-slate-500 font-cinzel">Mana</span>
+                <span className="text-lg font-bold text-blue-400 font-cinzel">{selectedClass.baseMp}</span>
+              </div>
+              <div className="flex justify-between mt-2 pt-2 border-t border-slate-800">
+                <span className="text-sm text-slate-500 font-cinzel">Willpower</span>
+                <span className="text-lg font-bold text-amber-400 font-cinzel">{selectedClass.baseWill}</span>
               </div>
             </div>
 
             <button
               onClick={handleCreate}
               disabled={!name.trim() || pointsRemaining > 0 || showTutorial}
-              className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold rounded flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
+              className="w-full py-4 bg-amber-700 hover:bg-amber-600 text-stone-100 font-bold font-cinzel text-lg rounded flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-700 shadow-lg"
             >
-              <span>ENTER REALM</span>
+              <span>DEFY FATE</span>
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>

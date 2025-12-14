@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
       /* Custom Scrollbar for Webkit to match the dark theme */
       ::-webkit-scrollbar {
@@ -24,6 +24,13 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #475569; 
       }
+      
+      .font-cinzel {
+        font-family: 'Cinzel', serif;
+      }
+      .font-crimson {
+        font-family: 'Crimson Text', serif;
+      }
     </style>
   <script type="importmap">
 {
@@ -31,12 +38,13 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.561.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
   }
 }
 </script>
 </head>
-  <body class="bg-slate-950 text-stone-200 font-mono overflow-hidden">
+  <body class="bg-slate-950 text-stone-200 font-crimson overflow-hidden selection:bg-amber-900 selection:text-white">
     <div id="root"></div>
   </body>
 </html>
