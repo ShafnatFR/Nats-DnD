@@ -1,25 +1,52 @@
+
 export type Sender = 'DM' | 'Player' | 'System';
+export type Language = 'EN' | 'ID';
 
 export interface Message {
   id: string;
   sender: Sender;
   text: string;
   timestamp: Date;
-  mood?: WorldState; // The atmosphere when this message was generated
+  mood?: WorldState;
 }
 
 export interface Stats {
   STR: number;
   DEX: number;
+  CON: number;
   INT: number;
   CHA: number;
+  FATE: number;
+}
+
+export interface DerivedStats {
+  carryWeight: number;
+  evasion: number;
+  critChance: number;
+  meleeDamageMod: number;
+  partyLimit: number;
+}
+
+export interface Trait {
+  id: string;
+  name: string;
+  description: string;
+  effectDescription: string;
+  modifiers: {
+    stats?: Partial<Stats>;
+    maxHp?: number;
+    maxMp?: number;
+    maxWill?: number;
+  };
 }
 
 export type WorldState = 'PHYSICAL' | 'ASTRAL' | 'BONFIRE' | 'ECLIPSE';
 
-export type ModalType = 'NONE' | 'INVENTORY' | 'SKILLS' | 'MAP' | 'PARTY' | 'CAMP';
+export type ModalType = 'NONE' | 'INVENTORY' | 'SKILLS' | 'MAP' | 'PARTY' | 'CAMP' | 'SMITHING' | 'COMBAT' | 'SHOP';
 
 export type ItemType = 'WEAPON' | 'ARMOR' | 'CONSUMABLE' | 'KEY' | 'MATERIAL';
+
+export type EquipSlot = 'HEAD' | 'BODY' | 'MAIN_HAND' | 'OFF_HAND' | 'ACCESSORY';
 
 export type TimeOfDay = 'DAWN' | 'DAY' | 'DUSK' | 'NIGHT';
 export type WeatherType = 'CLEAR' | 'RAIN' | 'STORM' | 'SNOW' | 'ASHFALL' | 'FOG';
@@ -31,9 +58,9 @@ export interface LocationNode {
   name: string;
   description: string;
   type: NodeType;
-  x: number; // 0-100 percentage for map placement
-  y: number; // 0-100 percentage
-  connections: string[]; // IDs of connected nodes
+  x: number;
+  y: number;
+  connections: string[];
 }
 
 export interface Companion {
@@ -43,9 +70,9 @@ export interface Companion {
   description: string;
   hp: number;
   maxHp: number;
-  loyalty: number; // 0-100
+  loyalty: number;
   status: 'ACTIVE' | 'WOUNDED' | 'DEAD';
-  avatarColor: string; // Hex or tailwind class hint
+  avatarColor: string;
 }
 
 export interface EnvironmentState {
@@ -56,10 +83,10 @@ export interface EnvironmentState {
 }
 
 export interface SurvivalStats {
-  hunger: number;       // 0-100 (100 = Sated)
-  thirst: number;       // 0-100 (100 = Hydrated)
-  fatigue: number;      // 0-100 (100 = Rested)
-  warmth: number;       // 0-100 (100 = Warm, 0 = Freezing)
+  hunger: number;
+  thirst: number;
+  fatigue: number;
+  warmth: number;
 }
 
 export interface Item {
@@ -67,8 +94,12 @@ export interface Item {
   name: string;
   type: ItemType;
   description: string;
-  icon: string; // Lucide icon name string
+  icon: string;
   quantity: number;
+  price: number;
+  // Upgrade Logic
+  upgradeLevel?: number; // Current +X
+  maxUpgradeLevel?: number; // Max possible
   effect?: {
     hpRestore?: number;
     willRestore?: number;
@@ -76,20 +107,50 @@ export interface Item {
     thirstRestore?: number;
     warmthRestore?: number;
   };
+  equipProps?: {
+    slot: EquipSlot;
+    modifiers?: Partial<Stats>;
+    defense?: number;
+  };
+}
+
+export interface UpgradeCost {
+  materialId: string;
+  count: number;
+  goldCost: number;
+  successRate: number; // 0.0 to 1.0
+  statGrowth: Partial<Stats>;
 }
 
 export interface Skill {
   id: string;
   name: string;
   description: string;
-  cost: number;        // Skill Points
+  cost: number;
   requiredLevel: number;
   prerequisiteId?: string;
   effect?: {
     bonusStat?: Partial<Stats>;
-    passive?: string; // e.g., "hunger_decay_reduced"
+    passive?: string;
   };
 }
+
+// --- COMBAT TYPES ---
+export interface Enemy {
+  id: string;
+  name: string;
+  description: string;
+  level: number;
+  hp: number;
+  maxHp: number;
+  stats: Stats; 
+  attacks: { name: string; damage: number; text: string }[];
+  xpReward: number;
+  lootTable: string[]; // ID Item
+  icon: string; // 'skull', 'ghost', 'wolf', etc.
+}
+
+export type CombatPhase = 'PLAYER_TURN' | 'ENEMY_TURN' | 'VICTORY' | 'DEFEAT';
 
 export interface Character {
   name: string;
@@ -99,9 +160,12 @@ export interface Character {
   maxHp: number;
   mp: number;
   maxMp: number;
-  will: number; // Replaces Sanity
+  will: number;
   maxWill: number;
-  stats: Stats;
+  stats: Stats; // Base Stats (Allocated)
+  equipment: Record<EquipSlot, Item | null>; // Current Gear
+  derivedStats: DerivedStats;
+  trait: Trait | null;
   survival: SurvivalStats;
   progression: {
     currentXp: number;
@@ -122,18 +186,18 @@ export interface CharacterClassDef {
   description: string;
   baseHp: number;
   baseMp: number;
-  baseWill: number; // Replaces baseSanity
-  bonusStat: keyof Stats;
+  baseWill: number; 
+  baseStats: Stats;
 }
 
 export interface AIResponse {
   narrative: string;
   hp_change: number;
-  will_change: number; // Replaces sanity_change
-  xp_reward?: number; // New field for progression
-  world_state: WorldState | null; // New field for visual atmosphere
+  will_change: number; 
+  xp_reward?: number; 
+  world_state: WorldState | null;
   new_inventory: string | null;
-  new_companion?: string | null; // ID of a companion to add
+  new_companion?: string | null; 
   dice_request: string | null;
   suggested_actions?: string[];
 }

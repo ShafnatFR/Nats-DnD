@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from 'react';
-import { Message, Character, AIResponse, WorldState, ModalType, Item, EnvironmentState, TimeOfDay, Companion } from './types';
-import { INITIAL_CHARACTER, SURVIVAL_CONSTANTS, XP_FORMULA, SKILL_TREE, WORLD_MAP, AVAILABLE_COMPANIONS } from './constants';
-import { rollDie, generateId } from './utils/gameUtils';
+
+import React, { useState, useCallback, useEffect } from 'react';
+import { Message, Character, AIResponse, WorldState, ModalType, Item, EnvironmentState, TimeOfDay, Companion, EquipSlot, Stats, Enemy, CombatPhase, Language } from './types';
+import { INITIAL_CHARACTER, SURVIVAL_CONSTANTS, XP_FORMULA, SKILL_TREE, WORLD_MAP, AVAILABLE_COMPANIONS, GET_UPGRADE_COST, ENEMIES, MATERIALS, STARTING_ITEMS, SHOP_INVENTORY } from './constants';
+import { rollDie, generateId, calculateTotalStats } from './utils/gameUtils';
 import { generateDMResponse, generateIntro } from './utils/gemini';
 import GameLog from './components/GameLog';
 import InputArea from './components/InputArea';
@@ -12,44 +13,309 @@ import ModalManager from './components/ModalManager';
 import EnvironmentWidget from './components/EnvironmentWidget';
 import { Sword } from 'lucide-react';
 
+const STORAGE_KEY = 'ai_realm_save_v1';
+
 const App: React.FC = () => {
-  // Game Flow State
+  // --- STATE INITIALIZATION WITH PERSISTENCE ---
   const [gameStarted, setGameStarted] = useState(false);
-  
-  // Game Data State
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [character, setCharacter] = useState<Character>(INITIAL_CHARACTER);
-  const [diceResult, setDiceResult] = useState<number | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [worldState, setWorldState] = useState<WorldState>('PHYSICAL');
+  const [activeModal, setActiveModal] = useState<ModalType>('NONE');
+  const [diceResult, setDiceResult] = useState<number | null>(null);
   
-  // Environment State
+  // Default to ID (Indonesian)
+  const [language, setLanguage] = useState<Language>('ID');
+
+  // Persistent Data States
+  const [character, setCharacter] = useState<Character>(INITIAL_CHARACTER);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [worldState, setWorldState] = useState<WorldState>('PHYSICAL');
   const [env, setEnv] = useState<EnvironmentState>({
     time: 'DAWN',
     weather: 'FOG',
-    locationName: 'Campfire of Beginnings',
+    locationName: 'Api Unggun Permulaan',
     turnCount: 0
   });
 
-  // UI State
-  const [activeModal, setActiveModal] = useState<ModalType>('NONE');
+  // Combat State
+  const [activeEnemy, setActiveEnemy] = useState<Enemy | null>(null);
+  const [combatLog, setCombatLog] = useState<string[]>([]);
+  const [combatPhase, setCombatPhase] = useState<CombatPhase>('PLAYER_TURN');
 
-  // Helper to determine background styles based on world state
-  const getWorldStyles = () => {
-    switch(worldState) {
-      case 'BONFIRE':
-        return 'bg-gradient-to-t from-orange-950 via-slate-900 to-slate-950'; // Warm Twilight
-      case 'ASTRAL':
-        return 'bg-[conic-gradient(at_top,_var(--tw-gradient-stops))] from-slate-900 via-indigo-950 to-black'; // Magic/Spirits
-      case 'ECLIPSE':
-        return 'bg-red-950 animate-pulse-slow'; // Hell on earth
-      case 'PHYSICAL':
-      default:
-        return 'bg-slate-950'; // Standard dark grit
+  // Load from Storage on Mount
+  useEffect(() => {
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        if (parsed.character && parsed.messages) {
+          // Backward compatibility check for equipment
+          const char = parsed.character;
+          if (!char.equipment) {
+             char.equipment = INITIAL_CHARACTER.equipment;
+          }
+
+          setCharacter(char);
+          setMessages(parsed.messages.map((m: any) => ({...m, timestamp: new Date(m.timestamp)}))); 
+          setWorldState(parsed.worldState);
+          setEnv(parsed.env);
+          if (parsed.language) setLanguage(parsed.language);
+          setGameStarted(true);
+        }
+      } catch (e) {
+        console.error("Save file corrupted", e);
+      }
+    }
+  }, []);
+
+  // Save to Storage on Change (Auto-Save)
+  useEffect(() => {
+    if (gameStarted) {
+      const saveData = {
+        character,
+        messages: messages.slice(-50), // Limit storage usage
+        worldState,
+        env,
+        language
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+    }
+  }, [character, messages, worldState, env, gameStarted, language]);
+
+  const toggleLanguage = () => {
+    setLanguage(prev => prev === 'EN' ? 'ID' : 'EN');
+  };
+
+  // --- SHOP LOGIC ---
+  const isShopAvailable = () => {
+     const loc = WORLD_MAP.find(n => n.id === character.currentLocationId);
+     return loc ? (loc.type === 'TOWN' || loc.type === 'SAFE') : false;
+  };
+
+  const handleBuyItem = (item: Item) => {
+     if (character.gold < item.price) return;
+
+     setCharacter(prev => {
+        const newGold = prev.gold - item.price;
+        const newInventory = [...prev.inventory];
+        const existingItem = newInventory.find(i => i.id === item.id);
+        
+        if (existingItem) {
+           existingItem.quantity += 1;
+        } else {
+           newInventory.push({ ...item, quantity: 1 });
+        }
+
+        return { ...prev, gold: newGold, inventory: newInventory };
+     });
+
+     setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `💰 Membeli ${item.name} seharga ${item.price}G.`, timestamp: new Date() }]);
+  };
+
+  const handleSellItem = (item: Item) => {
+     const sellPrice = Math.floor(item.price / 2);
+     
+     setCharacter(prev => {
+        const newGold = prev.gold + sellPrice;
+        let newInventory = [...prev.inventory];
+        const index = newInventory.findIndex(i => i.id === item.id);
+        
+        if (index > -1) {
+           if (newInventory[index].quantity > 1) {
+              newInventory[index].quantity -= 1;
+           } else {
+              newInventory.splice(index, 1);
+           }
+        }
+
+        return { ...prev, gold: newGold, inventory: newInventory };
+     });
+
+     setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `🪙 Menjual ${item.name} seharga ${sellPrice}G.`, timestamp: new Date() }]);
+  };
+
+  // --- COMBAT LOGIC ---
+
+  const startCombat = (enemyTemplate: Enemy) => {
+     setActiveEnemy({ ...enemyTemplate });
+     setCombatLog([`${enemyTemplate.name} liar muncul!`]);
+     setCombatPhase('PLAYER_TURN');
+     setActiveModal('COMBAT');
+  };
+
+  const handlePlayerAttack = () => {
+     if (!activeEnemy) return;
+     const totalStats = calculateTotalStats(character);
+     
+     // 1. Hit Chance: (70 + (DEX diff * 2))
+     const hitChance = Math.min(95, Math.max(30, 70 + ((totalStats.DEX - activeEnemy.stats.DEX) * 2)));
+     const roll = Math.random() * 100;
+
+     if (roll <= hitChance) {
+        // 2. Damage Calc: Total STR + Weapon Upgrade Bonus + Random(1-4)
+        let baseDmg = totalStats.STR;
+        // Check weapon upgrade
+        const weapon = character.equipment.MAIN_HAND;
+        if (weapon && weapon.upgradeLevel) {
+           baseDmg += (weapon.upgradeLevel * 2);
+        }
+        const damage = Math.floor(baseDmg + (Math.random() * 4));
+        
+        setActiveEnemy(prev => prev ? { ...prev, hp: Math.max(0, prev.hp - damage) } : null);
+        setCombatLog(prev => [...prev, `Kamu menyerang ${activeEnemy.name} sebesar ${damage} damage!`]);
+
+        // Check Victory
+        if ((activeEnemy.hp - damage) <= 0) {
+           setCombatPhase('VICTORY');
+           setCombatLog(prev => [...prev, `KEMENANGAN! ${activeEnemy.name} telah dikalahkan.`]);
+        } else {
+           setCombatPhase('ENEMY_TURN');
+           setTimeout(handleEnemyTurn, 1000);
+        }
+     } else {
+        setCombatLog(prev => [...prev, `Seranganmu meleset!`]);
+        setCombatPhase('ENEMY_TURN');
+        setTimeout(handleEnemyTurn, 1000);
+     }
+  };
+
+  const handleEnemyTurn = () => {
+     if (!activeEnemy || activeEnemy.hp <= 0) return; // Safety check
+
+     // Pick random attack
+     const attack = activeEnemy.attacks[Math.floor(Math.random() * activeEnemy.attacks.length)];
+     
+     // Calc Damage to Player
+     // Player Defense = CON/2 + Armor Modifiers
+     const totalStats = calculateTotalStats(character);
+     const defense = Math.floor(totalStats.CON / 2) + (character.equipment.BODY?.equipProps?.modifiers?.CON || 0); // Simplified armor calculation
+     
+     const rawDamage = attack.damage;
+     const finalDamage = Math.max(1, rawDamage - Math.floor(defense / 2)); // Defense mitigates half efficiently
+
+     setCharacter(prev => ({ ...prev, hp: Math.max(0, prev.hp - finalDamage) }));
+     setCombatLog(prev => [...prev, `${activeEnemy.name} ${attack.text} (${finalDamage} DMG)`]);
+
+     if ((character.hp - finalDamage) <= 0) {
+        setCombatPhase('DEFEAT');
+        setCombatLog(prev => [...prev, `KEKALAHAN... kegelapan melahapmu.`]);
+     } else {
+        setCombatPhase('PLAYER_TURN');
+     }
+  };
+
+  const handlePlayerSkill = (skillName: string) => {
+     // Placeholder for future skill logic integration
+     setCombatLog(prev => [...prev, `Kamu memusatkan energi... (Skill WIP)`]);
+     setCombatPhase('ENEMY_TURN');
+     setTimeout(handleEnemyTurn, 1000);
+  };
+
+  const handleFlee = () => {
+     if (!activeEnemy) return;
+     const totalStats = calculateTotalStats(character);
+     const chance = 50 + ((totalStats.DEX - activeEnemy.stats.DEX) * 5);
+     
+     if (Math.random() * 100 < chance) {
+        setCombatLog(prev => [...prev, `Kamu berhasil kabur!`]);
+        setTimeout(() => {
+           setActiveModal('NONE');
+           setActiveEnemy(null);
+        }, 1000);
+     } else {
+        setCombatLog(prev => [...prev, `Gagal melarikan diri!`]);
+        setCombatPhase('ENEMY_TURN');
+        setTimeout(handleEnemyTurn, 1000);
+     }
+  };
+
+  const handleVictory = async () => {
+     if (!activeEnemy) return;
+     const xp = activeEnemy.xpReward;
+     const loot = activeEnemy.lootTable.length > 0 
+        ? activeEnemy.lootTable[Math.floor(Math.random() * activeEnemy.lootTable.length)] 
+        : null;
+
+     // Gain XP
+     const { updatedChar, sysMessages } = handleGainXp(xp, character);
+     
+     // Gain Loot
+     let newInventory = [...updatedChar.inventory];
+     let lootName = '';
+     if (loot) {
+        // Find item definition from STARTING_ITEMS or MATERIALS logic (Simplified: looking up material by ID or fallback generic)
+        // In a real app, use a comprehensive ITEM_DATABASE.
+        // For now, check MATERIALS then STARTING_ITEMS
+        let itemDef = Object.values(MATERIALS).find(m => m.id === loot) as unknown as Item;
+        if (!itemDef) itemDef = STARTING_ITEMS.find(i => i.id === loot);
+
+        if (itemDef) {
+           lootName = itemDef.name;
+           const existingItem = newInventory.find(i => i.id === loot);
+           if (existingItem) {
+              existingItem.quantity += 1;
+           } else {
+              newInventory.push({ ...itemDef, quantity: 1, type: itemDef.type || 'MATERIAL' }); // Ensure type exists if pulling from simple material obj
+           }
+        }
+     }
+
+     setCharacter({ ...updatedChar, inventory: newInventory });
+     setActiveModal('NONE');
+     setActiveEnemy(null);
+
+     // Log to Main Chat
+     const victoryMsg = `⚔️ Mengalahkan ${activeEnemy.name}. Mendapatkan ${xp} XP${lootName ? ` dan menemukan ${lootName}` : ''}.`;
+     setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: victoryMsg, timestamp: new Date() }, ...sysMessages]);
+
+     // Trigger AI Narration of Victory
+     await handleSendMessage(`[SYSTEM]: Aku telah mengalahkan ${activeEnemy.name}. Deskripsikan serangan terakhir yang mematikan.`);
+  };
+
+  const handleDefeat = () => {
+     // Respawn Penalty
+     setCharacter(prev => ({
+        ...prev,
+        hp: prev.maxHp,
+        currentLocationId: 'loc_start',
+        gold: Math.floor(prev.gold / 2),
+        survival: { hunger: 50, thirst: 50, fatigue: 50, warmth: 50 }
+     }));
+     
+     setActiveModal('NONE');
+     setActiveEnemy(null);
+     setMessages(prev => [...prev, { 
+        id: generateId(), 
+        sender: 'System', 
+        text: `💀 KAMU MATI. Dibangkitkan kembali di Api Unggun. Emas hilang sebagian.`, 
+        timestamp: new Date() 
+     }]);
+  };
+
+
+  // --- GAME LOGIC ---
+
+  const handleResetGame = () => {
+    if (window.confirm("Apakah kamu yakin? Ini akan menghapus karakter dan ceritamu saat ini.")) {
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.reload();
     }
   };
 
-  // --- PROGRESSION LOGIC ---
+  const getWorldStyles = () => {
+    switch(worldState) {
+      case 'BONFIRE':
+        return 'bg-gradient-to-t from-orange-950 via-slate-900 to-slate-950'; 
+      case 'ASTRAL':
+        return 'bg-[conic-gradient(at_top,_var(--tw-gradient-stops))] from-slate-900 via-indigo-950 to-black'; 
+      case 'ECLIPSE':
+        return 'bg-red-950 animate-pulse-slow';
+      case 'PHYSICAL':
+      default:
+        return 'bg-slate-950';
+    }
+  };
+
+  // --- PROGRESSION ---
   const handleGainXp = (amount: number, currentCharacter: Character): { updatedChar: Character, sysMessages: Message[] } => {
      let char = { ...currentCharacter };
      const sysMessages: Message[] = [];
@@ -58,10 +324,9 @@ const App: React.FC = () => {
 
      char.progression.currentXp += amount;
      sysMessages.push({
-        id: generateId(), sender: 'System', text: `✨ Gained ${amount} XP.`, timestamp: new Date()
+        id: generateId(), sender: 'System', text: `✨ Mendapatkan ${amount} XP.`, timestamp: new Date()
      });
 
-     // Check for Level Up
      while (char.progression.currentXp >= char.progression.maxXp) {
         char.progression.currentXp -= char.progression.maxXp;
         char.level += 1;
@@ -69,14 +334,13 @@ const App: React.FC = () => {
         char.progression.statPoints += 2;
         char.progression.skillPoints += 1;
         
-        // Stat scaling
         char.maxHp += 10;
-        char.hp = char.maxHp; // Full heal on level up
+        char.hp = char.maxHp; 
         char.maxWill += 5;
         char.will = char.maxWill;
 
         sysMessages.push({
-           id: generateId(), sender: 'System', text: `🔥 LEVEL UP! You are now Level ${char.level}. (+1 SP, +2 Stats, Full Heal)`, timestamp: new Date()
+           id: generateId(), sender: 'System', text: `🔥 NAIK LEVEL! Kamu sekarang Level ${char.level}. (+1 SP, +2 Stats, Pulih Total)`, timestamp: new Date()
         });
      }
 
@@ -110,31 +374,24 @@ const App: React.FC = () => {
      });
 
      setMessages(prev => [...prev, {
-        id: generateId(), sender: 'System', text: `🧠 Learned Skill: ${skill.name}`, timestamp: new Date()
+        id: generateId(), sender: 'System', text: `🧠 Mempelajari Skill: ${skill.name}`, timestamp: new Date()
      }]);
   };
 
-
-  // --- ENVIRONMENT LOGIC ---
+  // --- SURVIVAL & ENV ---
   const advanceTime = (currentEnv: EnvironmentState): EnvironmentState => {
     const timeCycle: TimeOfDay[] = ['DAWN', 'DAY', 'DUSK', 'NIGHT'];
     const currentIndex = timeCycle.indexOf(currentEnv.time);
     const nextIndex = (currentIndex + 1) % timeCycle.length;
-    
-    return {
-      ...currentEnv,
-      time: timeCycle[nextIndex]
-    };
+    return { ...currentEnv, time: timeCycle[nextIndex] };
   };
 
-  // --- SURVIVAL LOGIC ---
   const processSurvivalTurn = (
     currentChar: Character, 
     currentEnv: EnvironmentState, 
     currentWorldState: WorldState
   ): { updatedChar: Character, sysMessages: Message[] } => {
     
-    // Skip survival decay if resting at bonfire
     if (currentWorldState === 'BONFIRE') {
       return { updatedChar: currentChar, sysMessages: [] };
     }
@@ -143,10 +400,7 @@ const App: React.FC = () => {
     const sysMessages: Message[] = [];
     let hpDamage = 0;
 
-    // 0. Check Passive Skills
     const hasIronStomach = currentChar.unlockedSkills.includes('iron_stomach');
-
-    // 1. Decay Rates
     const hungerDecay = hasIronStomach 
         ? Math.max(1, SURVIVAL_CONSTANTS.BASE_HUNGER_DECAY - 1) 
         : SURVIVAL_CONSTANTS.BASE_HUNGER_DECAY;
@@ -155,45 +409,27 @@ const App: React.FC = () => {
     survival.thirst = Math.max(0, survival.thirst - SURVIVAL_CONSTANTS.BASE_THIRST_DECAY);
     survival.fatigue = Math.max(0, survival.fatigue - SURVIVAL_CONSTANTS.BASE_FATIGUE_DECAY);
     
-    // Warmth recovery in CLEAR day, decay otherwise
     if (currentEnv.weather === 'CLEAR' && currentEnv.time === 'DAY') {
       survival.warmth = Math.min(100, survival.warmth + 2);
     } else {
-       // Nighttime or Bad Weather penalties
        let warmthDecay = 0;
        if (currentEnv.time === 'NIGHT') warmthDecay += 1;
        if (currentEnv.weather === 'SNOW' || currentEnv.weather === 'STORM') warmthDecay += 3;
        if (currentEnv.weather === 'RAIN' || currentEnv.weather === 'ASHFALL') warmthDecay += 1;
-       
        survival.warmth = Math.max(0, survival.warmth - warmthDecay);
     }
 
-    // 2. Consequences
     if (survival.hunger <= 0) {
        hpDamage += SURVIVAL_CONSTANTS.HP_PENALTY;
-       if (Math.random() > 0.7) sysMessages.push({
-          id: generateId(), sender: 'System', text: "🍖 You are starving. Your body consumes itself.", timestamp: new Date()
-       });
+       if (Math.random() > 0.7) sysMessages.push({ id: generateId(), sender: 'System', text: "🍖 Kelaparan...", timestamp: new Date() });
     }
-
     if (survival.thirst <= 0) {
        hpDamage += SURVIVAL_CONSTANTS.HP_PENALTY;
-       if (Math.random() > 0.7) sysMessages.push({
-          id: generateId(), sender: 'System', text: "💧 Thirst claws at your throat.", timestamp: new Date()
-       });
+       if (Math.random() > 0.7) sysMessages.push({ id: generateId(), sender: 'System', text: "💧 Kehausan...", timestamp: new Date() });
     }
-
     if (survival.warmth <= 0) {
        hpDamage += SURVIVAL_CONSTANTS.WARMTH_PENALTY;
-       sysMessages.push({
-          id: generateId(), sender: 'System', text: "❄️ You are freezing to death. The cold numbs your soul.", timestamp: new Date()
-       });
-    }
-
-    if (survival.fatigue <= 0 && Math.random() > 0.9) {
-       sysMessages.push({
-          id: generateId(), sender: 'System', text: "💤 Exhaustion clouds your vision. You stumble.", timestamp: new Date()
-       });
+       sysMessages.push({ id: generateId(), sender: 'System', text: "❄️ Membeku...", timestamp: new Date() });
     }
 
     const updatedChar = {
@@ -205,35 +441,41 @@ const App: React.FC = () => {
     return { updatedChar, sysMessages };
   };
 
-  // --- ITEM MANAGEMENT LOGIC ---
-
+  // --- ITEM LOGIC ---
   const handleUseItem = (item: Item) => {
     if (item.type !== 'CONSUMABLE') return;
+    let hpHealed = item.effect?.hpRestore || 0;
+    let willHealed = item.effect?.willRestore || 0;
+    let hungerHealed = item.effect?.hungerRestore || 0;
+    let thirstHealed = item.effect?.thirstRestore || 0;
+    let warmthHealed = item.effect?.warmthRestore || 0;
 
-    // 1. Apply Effects
-    let hpHealed = 0;
-    let willHealed = 0;
-    let hungerHealed = 0;
-    let thirstHealed = 0;
-    let warmthHealed = 0;
+    // Combat: Heal during combat
+    if (activeModal === 'COMBAT') {
+       setCharacter(prev => {
+          const updatedInventory = prev.inventory.map(i => {
+             if (i.id === item.id) return { ...i, quantity: i.quantity - 1 };
+             return i;
+          }).filter(i => i.quantity > 0);
 
-    if (item.effect) {
-      if (item.effect.hpRestore) hpHealed = item.effect.hpRestore;
-      if (item.effect.willRestore) willHealed = item.effect.willRestore;
-      if (item.effect.hungerRestore) hungerHealed = item.effect.hungerRestore;
-      if (item.effect.thirstRestore) thirstHealed = item.effect.thirstRestore;
-      if (item.effect.warmthRestore) warmthHealed = item.effect.warmthRestore;
+          return {
+             ...prev,
+             hp: Math.min(prev.maxHp, prev.hp + hpHealed),
+             inventory: updatedInventory
+          };
+       });
+       setCombatLog(prev => [...prev, `Menggunakan ${item.name}. Memulihkan HP.`]);
+       setCombatPhase('ENEMY_TURN');
+       setTimeout(handleEnemyTurn, 1000);
+       return;
     }
 
-    // 2. Update Character State
+    // Normal Usage
     setCharacter(prev => {
-       // Reduce Quantity
        const updatedInventory = prev.inventory.map(i => {
-          if (i.id === item.id) {
-             return { ...i, quantity: i.quantity - 1 };
-          }
+          if (i.id === item.id) return { ...i, quantity: i.quantity - 1 };
           return i;
-       }).filter(i => i.quantity > 0); // Remove if 0
+       }).filter(i => i.quantity > 0);
 
        return {
           ...prev,
@@ -249,229 +491,257 @@ const App: React.FC = () => {
        };
     });
 
-    // 3. Log System Message
-    const effects = [];
-    if(hpHealed) effects.push(`HP +${hpHealed}`);
-    if(hungerHealed) effects.push(`Hunger -${hungerHealed}`);
-    if(thirstHealed) effects.push(`Thirst -${thirstHealed}`);
-
     const sysMsg: Message = {
        id: generateId(),
        sender: 'System',
-       text: `Used ${item.name}. (${effects.join(', ')})`,
+       text: `Menggunakan ${item.name}.`,
        timestamp: new Date()
     };
     setMessages(prev => [...prev, sysMsg]);
   };
 
+  const handleEquipItem = (item: Item) => {
+    if (!item.equipProps) return;
+    const slot = item.equipProps.slot;
+
+    setCharacter(prev => {
+      const newEquipment = { ...prev.equipment };
+      let newInventory = prev.inventory.filter(i => i.id !== item.id); // Remove equipped item
+
+      // If slot is occupied, move old item to inventory
+      if (newEquipment[slot]) {
+        newInventory.push(newEquipment[slot]!);
+      }
+
+      newEquipment[slot] = item;
+
+      return {
+        ...prev,
+        equipment: newEquipment,
+        inventory: newInventory
+      };
+    });
+
+    setMessages(prev => [...prev, { 
+      id: generateId(), sender: 'System', text: `⚔️ Memasang ${item.name}.`, timestamp: new Date() 
+    }]);
+  };
+
+  const handleUnequipItem = (slot: EquipSlot) => {
+    setCharacter(prev => {
+      const itemToUnequip = prev.equipment[slot];
+      if (!itemToUnequip) return prev;
+
+      const newEquipment = { ...prev.equipment };
+      newEquipment[slot] = null;
+      
+      return {
+        ...prev,
+        equipment: newEquipment,
+        inventory: [...prev.inventory, itemToUnequip]
+      };
+    });
+
+    setMessages(prev => [...prev, { 
+       id: generateId(), sender: 'System', text: `🛡️ Melepas item dari ${slot}.`, timestamp: new Date() 
+    }]);
+  };
+
   const handleDropItem = (item: Item) => {
-     if (window.confirm(`Discard ${item.name}? It will be lost forever.`)) {
-        setCharacter(prev => ({
-           ...prev,
-           inventory: prev.inventory.filter(i => i.id !== item.id)
-        }));
-        
-        const sysMsg: Message = {
-           id: generateId(),
-           sender: 'System',
-           text: `🗑️ You discarded ${item.name}.`,
-           timestamp: new Date()
-        };
-        setMessages(prev => [...prev, sysMsg]);
+     if (window.confirm(`Buang ${item.name}?`)) {
+        setCharacter(prev => ({ ...prev, inventory: prev.inventory.filter(i => i.id !== item.id) }));
+        setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `🗑️ Membuang ${item.name}.`, timestamp: new Date() }]);
      }
   };
 
-  // --- TRAVEL & PARTY LOGIC ---
+  const handleUpgradeItem = (item: Item, materialId: string) => {
+    const cost = GET_UPGRADE_COST(item.type, item.upgradeLevel || 0);
+    if (!cost) return;
 
+    // Check Chance
+    const roll = Math.random();
+    const success = roll <= cost.successRate;
+
+    setCharacter(prev => {
+       const char = { ...prev };
+       
+       // Deduct Material
+       const matIndex = char.inventory.findIndex(i => i.id === materialId);
+       if (matIndex > -1) {
+          char.inventory[matIndex].quantity -= cost.count;
+          if (char.inventory[matIndex].quantity <= 0) {
+             char.inventory.splice(matIndex, 1);
+          }
+       }
+       
+       // Deduct Gold
+       char.gold -= cost.goldCost;
+
+       if (success) {
+          // Identify where the item is (Inventory or Equipment)
+          let targetItem: Item | null = null;
+          let isEquipped = false;
+          let slot: EquipSlot | null = null;
+
+          // Check Equipment
+          if (item.equipProps) {
+             slot = item.equipProps.slot;
+             if (char.equipment[slot]?.id === item.id) {
+                targetItem = char.equipment[slot];
+                isEquipped = true;
+             }
+          }
+
+          // Check Inventory if not found equipped
+          if (!targetItem) {
+             targetItem = char.inventory.find(i => i.id === item.id) || null;
+          }
+
+          if (targetItem && targetItem.equipProps) {
+             targetItem.upgradeLevel = (targetItem.upgradeLevel || 0) + 1;
+             targetItem.name = `${targetItem.name.replace(/\s\+\d+$/, '')} +${targetItem.upgradeLevel}`; // Update Name (Regex cleans old +X)
+             
+             // Update Stats
+             const growth = cost.statGrowth;
+             if (growth && targetItem.equipProps.modifiers) {
+                if (growth.STR) targetItem.equipProps.modifiers.STR = (targetItem.equipProps.modifiers.STR || 0) + growth.STR;
+                if (growth.DEX) targetItem.equipProps.modifiers.DEX = (targetItem.equipProps.modifiers.DEX || 0) + growth.DEX;
+                if (growth.CON) targetItem.equipProps.modifiers.CON = (targetItem.equipProps.modifiers.CON || 0) + growth.CON;
+                if (growth.INT) targetItem.equipProps.modifiers.INT = (targetItem.equipProps.modifiers.INT || 0) + growth.INT;
+                if (growth.CHA) targetItem.equipProps.modifiers.CHA = (targetItem.equipProps.modifiers.CHA || 0) + growth.CHA;
+                if (growth.FATE) targetItem.equipProps.modifiers.FATE = (targetItem.equipProps.modifiers.FATE || 0) + growth.FATE;
+             }
+
+             // If equipped, ensure state updates correctly by re-assigning
+             if (isEquipped && slot) {
+                char.equipment[slot] = { ...targetItem };
+             } else {
+               // If in inventory, force array update
+               const idx = char.inventory.findIndex(i => i.id === targetItem!.id);
+               if(idx > -1) char.inventory[idx] = { ...targetItem };
+             }
+          }
+
+          setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `🔥 SUKSES! Menempa ${targetItem?.name}.`, timestamp: new Date() }]);
+       } else {
+          setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `💥 GAGAL! Logam hancur. Material hilang.`, timestamp: new Date() }]);
+       }
+
+       return char;
+    });
+  };
+
+  // --- TRAVEL & PARTY ---
   const handleTravel = async (nodeId: string) => {
     const targetNode = WORLD_MAP.find(n => n.id === nodeId);
     if (!targetNode) return;
+    setActiveModal('NONE');
 
-    setActiveModal('NONE'); // Close map
-
-    // 1. Pay Costs
-    const hungerCost = 10;
-    const thirstCost = 15;
-    const fatigueCost = 10;
-    
-    // 2. Update Character
     setCharacter(prev => ({
        ...prev,
        currentLocationId: targetNode.id,
        survival: {
           ...prev.survival,
-          hunger: Math.max(0, prev.survival.hunger - hungerCost),
-          thirst: Math.max(0, prev.survival.thirst - thirstCost),
-          fatigue: Math.max(0, prev.survival.fatigue - fatigueCost)
+          hunger: Math.max(0, prev.survival.hunger - 10),
+          thirst: Math.max(0, prev.survival.thirst - 15),
+          fatigue: Math.max(0, prev.survival.fatigue - 10)
        }
     }));
 
-    // 3. Update Env (Time passes)
     setEnv(prev => ({
        ...prev,
        locationName: targetNode.name,
-       time: prev.time === 'DAWN' ? 'DAY' : prev.time === 'DAY' ? 'DUSK' : prev.time === 'DUSK' ? 'NIGHT' : 'DAWN', // Advance 1 slot approx
-       turnCount: prev.turnCount + 10 // Big jump
+       time: prev.time === 'DAWN' ? 'DAY' : prev.time === 'DAY' ? 'DUSK' : prev.time === 'DUSK' ? 'NIGHT' : 'DAWN',
+       turnCount: prev.turnCount + 10
     }));
 
-    // 4. Log Movement
-    const moveMsg: Message = {
+    setMessages(prev => [...prev, {
        id: generateId(), sender: 'System', 
-       text: `🚶 Traveled to ${targetNode.name}. (-${hungerCost} Hunger, -${thirstCost} Thirst, +4 Hours)`, 
+       text: `🚶 Perjalanan ke ${targetNode.name}.`, 
        timestamp: new Date()
-    };
-    setMessages(prev => [...prev, moveMsg]);
+    }]);
 
-    // 5. Trigger AI
-    await handleSendMessage(`I have arrived at ${targetNode.name}. What do I see?`);
+    // CHECK COMBAT TRIGGER
+    if (targetNode.type === 'DANGER' || targetNode.type === 'DUNGEON') {
+       if (Math.random() < 0.3) {
+          const enemyKeys = Object.keys(ENEMIES);
+          const randomEnemyKey = enemyKeys[Math.floor(Math.random() * enemyKeys.length)];
+          // Slight delay to let the travel message appear
+          setTimeout(() => {
+             startCombat(ENEMIES[randomEnemyKey]);
+          }, 500);
+          return; // Stop here, combat handles logic
+       }
+    }
+
+    await handleSendMessage(`Aku telah sampai di ${targetNode.name}. Apa yang kulihat?`);
   };
 
   const handleNpcInteraction = async (companion: Companion) => {
      setActiveModal('NONE');
-     await handleSendMessage(`(Talking to ${companion.name}): "What are your thoughts on this place?"`);
+     await handleSendMessage(`(Bicara dengan ${companion.name}): "Apa pendapatmu tentang tempat ini?"`);
   };
 
   const handleDismissNpc = (companion: Companion) => {
-     if (window.confirm(`Part ways with ${companion.name}?`)) {
-        setCharacter(prev => ({
-           ...prev,
-           party: prev.party.filter(c => c.id !== companion.id)
-        }));
-        setMessages(prev => [...prev, {
-           id: generateId(), sender: 'System', text: `👋 ${companion.name} has left the party.`, timestamp: new Date()
-        }]);
+     if (window.confirm(`Berpisah dengan ${companion.name}?`)) {
+        setCharacter(prev => ({ ...prev, party: prev.party.filter(c => c.id !== companion.id) }));
+        setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `👋 ${companion.name} pergi.`, timestamp: new Date() }]);
      }
   };
 
-  // Helper to handle state updates from AI Response
+  // --- AI HANDLER ---
   const applyAIUpdates = (data: AIResponse) => {
-      // 1. Update World State (Atmosphere)
-      if (data.world_state) {
-        setWorldState(data.world_state);
-      }
+      if (data.world_state) setWorldState(data.world_state);
 
-      // 2. XP Logic check first to potentially trigger Level Up before visual updates
       let currentChar = character;
       if (data.xp_reward && data.xp_reward > 0) {
           const { updatedChar, sysMessages } = handleGainXp(data.xp_reward, character);
           currentChar = updatedChar;
-          setCharacter(currentChar); // Immediate update for XP
+          setCharacter(currentChar);
           setMessages(prev => [...prev, ...sysMessages]);
       }
 
-      // 3. Update Character Stats (HP & Will) based on AI
       if (data.hp_change !== 0 || data.will_change !== 0 || data.new_inventory || data.new_companion) {
         setCharacter(prev => {
-          let newHp = prev.hp + data.hp_change;
-          if (newHp > prev.maxHp) newHp = prev.maxHp;
-          if (newHp < 0) newHp = 0;
-
-          let newWill = prev.will + data.will_change;
-          if (newWill > prev.maxWill) newWill = prev.maxWill;
-          if (newWill < 0) newWill = 0;
-
+          let newHp = Math.max(0, Math.min(prev.maxHp, prev.hp + data.hp_change));
+          let newWill = Math.max(0, Math.min(prev.maxWill, prev.will + data.will_change));
           const newInventory = [...prev.inventory];
           if (data.new_inventory) {
-             const newItem: Item = {
-                id: generateId(),
-                name: data.new_inventory,
-                type: 'MATERIAL', 
-                description: 'An item found during your travels.',
-                icon: 'gem',
-                quantity: 1
-             };
-             newInventory.push(newItem);
+             newInventory.push({ id: generateId(), name: data.new_inventory, type: 'MATERIAL', description: 'Menemukan item.', icon: 'gem', quantity: 1, price: 50 });
           }
-
           const newParty = [...prev.party];
-          if (data.new_companion && AVAILABLE_COMPANIONS[data.new_companion]) {
-             // Only add if not already in party
-             if (!newParty.find(c => c.id === data.new_companion)) {
-                newParty.push(AVAILABLE_COMPANIONS[data.new_companion]);
-             }
+          if (data.new_companion && AVAILABLE_COMPANIONS[data.new_companion] && !newParty.find(c => c.id === data.new_companion)) {
+             newParty.push(AVAILABLE_COMPANIONS[data.new_companion]);
           }
-
-          return {
-            ...prev,
-            hp: newHp,
-            will: newWill,
-            inventory: newInventory,
-            party: newParty
-          };
+          return { ...prev, hp: newHp, will: newWill, inventory: newInventory, party: newParty };
         });
       }
 
-      // 4. Handle System Event for Stat Changes (Logs)
+      // Logs
       if (data.hp_change !== 0 || data.will_change !== 0) {
-         const changes = [];
-         if (data.hp_change < 0) changes.push(`Taking ${Math.abs(data.hp_change)} Damage`);
-         if (data.hp_change > 0) changes.push(`Recovering ${data.hp_change} HP`);
-         if (data.will_change < 0) changes.push(`Willpower fading by ${Math.abs(data.will_change)}`);
-         if (data.will_change > 0) changes.push(`Willpower restored by ${data.will_change}`);
-
-         const sysMsg: Message = {
-            id: generateId(),
-            sender: 'System',
-            text: `⚠️ STATUS UPDATE: ${changes.join(', ')}`,
-            timestamp: new Date()
-         };
-         setMessages(prev => [...prev, sysMsg]);
+         setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `⚠️ Status Diperbarui.`, timestamp: new Date() }]);
       }
-
-      // 5. Handle Companion Recruit Log
-      if (data.new_companion && AVAILABLE_COMPANIONS[data.new_companion]) {
+      if (data.new_companion) {
          const comp = AVAILABLE_COMPANIONS[data.new_companion];
-         const sysMsg: Message = {
-            id: generateId(),
-            sender: 'System',
-            text: `👥 COMPANION JOINED: ${comp.name} the ${comp.class}`,
-            timestamp: new Date()
-         };
-         setMessages(prev => [...prev, sysMsg]);
+         if(comp) setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `👥 Bergabung: ${comp.name}`, timestamp: new Date() }]);
       }
-
-      // 6. Handle Dice Request
       if (data.dice_request) {
-        const sysMsg: Message = {
-          id: generateId(),
-          sender: 'System',
-          text: `🎲 Fate demands a roll for: ${data.dice_request}`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, sysMsg]);
+        setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `🎲 Roll untuk: ${data.dice_request}`, timestamp: new Date() }]);
       }
-
-      // 7. Handle Inventory Notification
       if (data.new_inventory) {
-         const sysMsg: Message = {
-            id: generateId(),
-            sender: 'System',
-            text: `🎒 ACQUIRED: ${data.new_inventory}`,
-            timestamp: new Date()
-         };
-         setMessages(prev => [...prev, sysMsg]);
+         setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `🎒 Ditemukan: ${data.new_inventory}`, timestamp: new Date() }]);
       }
   };
 
-  // Character Creation Handler
   const handleCharacterCreate = async (newCharacter: Character) => {
     setCharacter(newCharacter);
     setGameStarted(true);
     setIsProcessing(true); 
-    
     try {
-      const data = await generateIntro(newCharacter);
-      
-      const dmMsg: Message = {
-        id: generateId(),
-        sender: 'DM',
-        text: data.narrative,
-        timestamp: new Date(),
-        mood: data.world_state || 'BONFIRE'
-      };
+      const data = await generateIntro(newCharacter, language);
+      const dmMsg: Message = { id: generateId(), sender: 'DM', text: data.narrative, timestamp: new Date(), mood: data.world_state || 'BONFIRE' };
       setMessages([dmMsg]);
       applyAIUpdates(data);
-
     } catch (error) {
        console.error("Init Error:", error);
     } finally {
@@ -479,35 +749,19 @@ const App: React.FC = () => {
     }
   };
 
-  // Main Game Handlers
   const handleSendMessage = async (text: string) => {
-    // A. Add Player Message
-    const playerMsg: Message = {
-      id: generateId(),
-      sender: 'Player',
-      text: text,
-      timestamp: new Date(),
-      mood: worldState
-    };
-
+    const playerMsg: Message = { id: generateId(), sender: 'Player', text: text, timestamp: new Date(), mood: worldState };
     let updatedMessages = [...messages, playerMsg];
     setMessages(updatedMessages);
     setIsProcessing(true);
 
-    // B. Environment Simulation (Time Passing)
     let currentTurnEnv = { ...env, turnCount: env.turnCount + 1 };
-    
-    // Simulate time passing every 5 turns
     if (currentTurnEnv.turnCount % 5 === 0) {
       currentTurnEnv = advanceTime(currentTurnEnv);
-      const timeMsg: Message = {
-        id: generateId(), sender: 'System', text: `⏳ Time passes... It is now ${currentTurnEnv.time}.`, timestamp: new Date()
-      };
-      updatedMessages.push(timeMsg);
+      updatedMessages.push({ id: generateId(), sender: 'System', text: `⏳ Waktu: ${currentTurnEnv.time}.`, timestamp: new Date() });
     }
     setEnv(currentTurnEnv);
 
-    // C. Survival Mechanics
     const { updatedChar, sysMessages } = processSurvivalTurn(character, currentTurnEnv, worldState);
     setCharacter(updatedChar);
     if (sysMessages.length > 0) {
@@ -516,32 +770,11 @@ const App: React.FC = () => {
     }
 
     try {
-      // D. Call Gemini Brain
-      // Pass the updated character (with potential survival decay) to the AI
-      const data = await generateDMResponse(text, updatedMessages, updatedChar, worldState);
-
-      // E. Apply Logic (XP, Stats, etc.)
+      const data = await generateDMResponse(text, updatedMessages, updatedChar, worldState, language);
       applyAIUpdates(data);
-
-      // F. Add Narrator Response
-      const dmMsg: Message = {
-        id: generateId(),
-        sender: 'DM',
-        text: data.narrative,
-        timestamp: new Date(),
-        mood: data.world_state || worldState
-      };
-      setMessages(prev => [...prev, dmMsg]);
-
+      setMessages(prev => [...prev, { id: generateId(), sender: 'DM', text: data.narrative, timestamp: new Date(), mood: data.world_state || worldState }]);
     } catch (error) {
       console.error("AI Error:", error);
-      const errorMsg: Message = {
-        id: generateId(),
-        sender: 'System',
-        text: "⚠️ Fate is silent (Network Error).",
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsProcessing(false);
     }
@@ -550,15 +783,7 @@ const App: React.FC = () => {
   const handleDiceRoll = useCallback(() => {
     const result = rollDie(20);
     setDiceResult(result);
-
-    const systemMsg: Message = {
-      id: generateId(),
-      sender: 'System',
-      text: `🎲 ${character.name} rolled a ${result} on a D20 check.`,
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, systemMsg]);
+    setMessages(prev => [...prev, { id: generateId(), sender: 'System', text: `🎲 Menggulung ${result}.`, timestamp: new Date() }]);
   }, [character.name]);
 
   if (!gameStarted) {
@@ -568,28 +793,42 @@ const App: React.FC = () => {
   return (
     <div className={`flex flex-col h-screen max-h-screen text-stone-200 transition-colors duration-1000 ease-in-out ${getWorldStyles()}`}>
       
-      {/* Modal Overlay */}
       <ModalManager 
         activeModal={activeModal} 
         onClose={() => setActiveModal('NONE')} 
         character={character}
+        language={language}
         onUseItem={handleUseItem}
         onDropItem={handleDropItem}
         onLearnSkill={handleLearnSkill}
         onTravel={handleTravel}
         onTalkNpc={handleNpcInteraction}
         onDismissNpc={handleDismissNpc}
+        // New Props for Equipment handled via ModalManager props (casted as any for now or needs updated Interface)
+        {...{onEquip: handleEquipItem, onUnequip: handleUnequipItem, onUpgrade: handleUpgradeItem}}
+        
+        // Combat Props
+        combatState={{ enemy: activeEnemy, log: combatLog, phase: combatPhase }}
+        onCombatAction={{
+           attack: handlePlayerAttack,
+           skill: handlePlayerSkill,
+           flee: handleFlee,
+           victory: handleVictory,
+           defeat: handleDefeat
+        }}
+
+        // Shop Props
+        shopProps={{
+           inventory: SHOP_INVENTORY,
+           onBuy: handleBuyItem,
+           onSell: handleSellItem
+        }}
       />
 
-      {/* Visual Overlays */}
-      {worldState === 'ECLIPSE' && (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_rgba(100,0,0,0.2)_100%)] pointer-events-none z-0"></div>
-      )}
-      {worldState === 'BONFIRE' && (
-        <div className="absolute bottom-0 w-full h-1/3 bg-gradient-to-t from-orange-600/10 to-transparent pointer-events-none z-0 animate-pulse"></div>
-      )}
+      {/* Overlays */}
+      {worldState === 'ECLIPSE' && <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_rgba(100,0,0,0.2)_100%)] pointer-events-none z-0"></div>}
+      {worldState === 'BONFIRE' && <div className="absolute bottom-0 w-full h-1/3 bg-gradient-to-t from-orange-600/10 to-transparent pointer-events-none z-0 animate-pulse"></div>}
 
-      {/* Mobile Header */}
       <header className="md:hidden flex items-center justify-between p-4 bg-slate-900/80 backdrop-blur border-b border-slate-800 z-10">
          <div className="flex items-center gap-2 text-amber-600">
             <Sword className="w-5 h-5" />
@@ -597,35 +836,23 @@ const App: React.FC = () => {
          </div>
       </header>
 
-      {/* Main Layout */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden z-10">
-        
-        {/* Left Column: Narrative (70%) */}
         <section className="flex-1 flex flex-col md:w-[70%] border-r border-slate-800 relative">
-           {/* Environment Widget sits at the top of the narrative column */}
            <EnvironmentWidget env={env} />
-          
           <GameLog messages={messages} />
-          
-          {/* Navigation Dock is integrated here to sit above input */}
-          <GameDock activeModal={activeModal} setActiveModal={setActiveModal} />
-          
-          <InputArea 
-            onSendMessage={handleSendMessage} 
-            disabled={isProcessing} 
+          <GameDock 
+            activeModal={activeModal} 
+            setActiveModal={setActiveModal} 
+            language={language}
+            onResetGame={handleResetGame}
+            isShopAvailable={isShopAvailable()}
+            onToggleLanguage={toggleLanguage}
           />
+          <InputArea onSendMessage={handleSendMessage} disabled={isProcessing} language={language} />
         </section>
-
-        {/* Right Column: Character Sheet (30%) */}
         <aside className="hidden md:flex flex-col h-full md:w-[30%] border-slate-800 z-20">
-          <CharacterSheet 
-            character={character}
-            diceResult={diceResult}
-            onDiceRoll={handleDiceRoll}
-            worldState={worldState}
-          />
+          <CharacterSheet character={character} diceResult={diceResult} onDiceRoll={handleDiceRoll} worldState={worldState} language={language} />
         </aside>
-
       </main>
     </div>
   );

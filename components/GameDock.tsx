@@ -1,21 +1,31 @@
+
 import React from 'react';
-import { Backpack, Scroll, Map, Users, Tent, Sparkles } from 'lucide-react';
-import { ModalType } from '../types';
+import { Backpack, Scroll, Map, Users, Tent, Trash2, Hammer, Store, Globe } from 'lucide-react';
+import { ModalType, Language } from '../types';
+import { UI_TRANSLATIONS } from '../constants';
 
 interface GameDockProps {
   activeModal: ModalType;
   setActiveModal: (type: ModalType) => void;
+  language: Language;
+  onResetGame: () => void;
+  isShopAvailable: boolean;
+  onToggleLanguage: () => void;
 }
 
-const DOCK_ITEMS: { id: ModalType; icon: React.ReactNode; label: string }[] = [
-  { id: 'INVENTORY', icon: <Backpack size={20} />, label: 'Bag' },
-  { id: 'SKILLS', icon: <Scroll size={20} />, label: 'Skills' },
-  { id: 'MAP', icon: <Map size={20} />, label: 'World' },
-  { id: 'PARTY', icon: <Users size={20} />, label: 'Party' },
-  { id: 'CAMP', icon: <Tent size={20} />, label: 'Rest' },
-];
+const GameDock: React.FC<GameDockProps> = ({ activeModal, setActiveModal, language, onResetGame, isShopAvailable, onToggleLanguage }) => {
+  const t = UI_TRANSLATIONS[language];
 
-const GameDock: React.FC<GameDockProps> = ({ activeModal, setActiveModal }) => {
+  const DOCK_ITEMS: { id: ModalType; icon: React.ReactNode; label: string; hidden?: boolean }[] = [
+    { id: 'INVENTORY', icon: <Backpack size={20} />, label: t.dock_bag },
+    { id: 'SKILLS', icon: <Scroll size={20} />, label: t.dock_skills },
+    { id: 'SMITHING', icon: <Hammer size={20} />, label: t.dock_forge },
+    { id: 'SHOP', icon: <Store size={20} />, label: t.dock_shop },
+    { id: 'MAP', icon: <Map size={20} />, label: t.dock_world },
+    { id: 'PARTY', icon: <Users size={20} />, label: t.dock_party },
+    { id: 'CAMP', icon: <Tent size={20} />, label: t.dock_rest },
+  ];
+
   const handleToggle = (id: ModalType) => {
     if (activeModal === id) {
       setActiveModal('NONE');
@@ -26,8 +36,11 @@ const GameDock: React.FC<GameDockProps> = ({ activeModal, setActiveModal }) => {
 
   return (
     <div className="w-full bg-slate-900/90 backdrop-blur-md border-t border-b border-slate-800 flex items-center justify-center px-4 py-2 z-30">
-      <div className="flex items-center gap-1 md:gap-4 overflow-x-auto no-scrollbar w-full max-w-lg justify-between md:justify-center">
+      <div className="flex items-center gap-1 md:gap-4 overflow-x-auto no-scrollbar w-full max-w-2xl justify-between md:justify-center">
+        
         {DOCK_ITEMS.map((item) => {
+          if (item.id === 'SHOP' && !isShopAvailable) return null;
+
           const isActive = activeModal === item.id;
           return (
             <button
@@ -50,6 +63,36 @@ const GameDock: React.FC<GameDockProps> = ({ activeModal, setActiveModal }) => {
             </button>
           );
         })}
+
+        {/* Separator */}
+        <div className="h-8 w-px bg-slate-800 mx-2"></div>
+
+        {/* Language Switcher */}
+        <button
+          onClick={onToggleLanguage}
+          className="flex flex-col items-center justify-center min-w-[50px] p-2 rounded text-slate-500 hover:text-stone-300 hover:bg-slate-800/50 transition-all"
+        >
+          <div className="mb-1">
+            <Globe size={18} />
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-cinzel font-bold text-slate-600">
+            {language}
+          </span>
+        </button>
+
+        {/* Reset */}
+        <button
+          onClick={onResetGame}
+          className="flex flex-col items-center justify-center min-w-[50px] p-2 rounded text-red-900/60 hover:text-red-500 hover:bg-red-950/30 transition-all"
+        >
+          <div className="mb-1">
+            <Trash2 size={18} />
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-cinzel font-bold text-red-900/60 hover:text-red-500">
+            {t.dock_reset}
+          </span>
+        </button>
+
       </div>
     </div>
   );

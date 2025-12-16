@@ -1,13 +1,18 @@
+
 import React, { useState } from 'react';
 import { Send, ChevronRight } from 'lucide-react';
+import { Language } from '../types';
+import { UI_TRANSLATIONS } from '../constants';
 
 interface InputAreaProps {
   onSendMessage: (text: string) => void;
   disabled: boolean;
+  language?: Language;
 }
 
-const InputArea: React.FC<InputAreaProps> = ({ onSendMessage, disabled }) => {
+const InputArea: React.FC<InputAreaProps> = ({ onSendMessage, disabled, language = 'EN' }) => {
   const [inputValue, setInputValue] = useState('');
+  const t = UI_TRANSLATIONS[language];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +33,7 @@ const InputArea: React.FC<InputAreaProps> = ({ onSendMessage, disabled }) => {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           disabled={disabled}
-          placeholder={disabled ? "The Keeper is weaving fate..." : "What is thy bidding?"}
+          placeholder={disabled ? t.input_placeholder_wait : t.input_placeholder}
           className="w-full bg-slate-950 border border-slate-700 text-stone-200 pl-10 pr-12 py-3 rounded focus:outline-none focus:border-amber-700 focus:ring-1 focus:ring-amber-700/50 transition-all font-crimson text-lg placeholder:text-slate-600 disabled:opacity-50"
           autoFocus
         />

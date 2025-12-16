@@ -1,35 +1,92 @@
+
 import React from 'react';
-import { ModalType, Character, Item, Companion, SurvivalStats } from '../types';
+import { ModalType, Character, Item, Companion, SurvivalStats, EquipSlot, Enemy, CombatPhase, Language } from '../types';
+import { UI_TRANSLATIONS } from '../constants';
 import { X } from 'lucide-react';
 import InventoryModal from './InventoryModal';
 import SkillModal from './SkillModal';
 import MapModal from './MapModal';
 import PartyModal from './PartyModal';
+import SmithingModal from './SmithingModal';
+import CombatModal from './CombatModal';
+import ShopModal from './ShopModal';
 
 interface ModalManagerProps {
   activeModal: ModalType;
   onClose: () => void;
   character: Character;
+  language?: Language;
   onUseItem: (item: Item) => void;
   onDropItem: (item: Item) => void;
   onLearnSkill: (skillId: string) => void;
   onTravel: (nodeId: string) => void;
   onTalkNpc: (companion: Companion) => void;
   onDismissNpc: (companion: Companion) => void;
+  // Dynamic props that might be passed from App
+  onEquip?: (item: Item) => void;
+  onUnequip?: (slot: EquipSlot) => void;
+  onUpgrade?: (item: Item, materialId: string) => void;
+  // Combat Props
+  combatState?: {
+     enemy: Enemy | null;
+     log: string[];
+     phase: CombatPhase;
+  };
+  onCombatAction?: {
+     attack: () => void;
+     skill: (name: string) => void;
+     flee: () => void;
+     victory: () => void;
+     defeat: () => void;
+  };
+  // Shop Props
+  shopProps?: {
+     inventory: Item[];
+     onBuy: (item: Item) => void;
+     onSell: (item: Item) => void;
+  };
 }
 
 const ModalManager: React.FC<ModalManagerProps> = ({ 
   activeModal, 
   onClose, 
   character, 
+  language = 'EN',
   onUseItem, 
   onDropItem, 
   onLearnSkill,
   onTravel,
   onTalkNpc,
-  onDismissNpc
+  onDismissNpc,
+  onEquip,
+  onUnequip,
+  onUpgrade,
+  combatState,
+  onCombatAction,
+  shopProps
 }) => {
+  const t = UI_TRANSLATIONS[language];
   if (activeModal === 'NONE') return null;
+
+  // Combat Modal handles its own container style to be centered and focused
+  if (activeModal === 'COMBAT' && combatState && combatState.enemy && onCombatAction) {
+     return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
+           <CombatModal 
+              enemy={combatState.enemy}
+              character={character}
+              combatLog={combatState.log}
+              phase={combatState.phase}
+              onAttack={onCombatAction.attack}
+              onSkill={onCombatAction.skill}
+              onUseItem={onUseItem} // Re-use item logic for potions
+              onFlee={onCombatAction.flee}
+              onVictory={onCombatAction.victory}
+              onDefeat={onCombatAction.defeat}
+           />
+        </div>
+     );
+  }
 
   const renderContent = () => {
     switch (activeModal) {
@@ -37,9 +94,13 @@ const ModalManager: React.FC<ModalManagerProps> = ({
         return (
           <InventoryModal 
             inventory={character.inventory} 
+            equipment={character.equipment}
             gold={character.gold}
             onUse={onUseItem}
             onDrop={onDropItem}
+            onEquip={onEquip!}
+            onUnequip={onUnequip!}
+            language={language}
           />
         );
       
@@ -69,6 +130,27 @@ const ModalManager: React.FC<ModalManagerProps> = ({
            />
          );
 
+      case 'SMITHING':
+        return (
+          <SmithingModal 
+            character={character}
+            onUpgrade={onUpgrade!}
+          />
+        );
+
+      case 'SHOP':
+         if (!shopProps) return null;
+         return (
+            <ShopModal 
+               playerGold={character.gold}
+               inventory={character.inventory}
+               shopItems={shopProps.inventory}
+               onBuy={shopProps.onBuy}
+               onSell={shopProps.onSell}
+               language={language}
+            />
+         );
+
       case 'CAMP':
          return (
             <div className="text-center py-8">
@@ -77,10 +159,13 @@ const ModalManager: React.FC<ModalManagerProps> = ({
                </div>
                <h3 className="text-2xl font-cinzel text-stone-300 mb-2">Respite</h3>
                <p className="text-slate-400 max-w-md mx-auto mb-6">
-                  Use the command <span className="text-amber-500 font-mono">"Rest"</span> or <span className="text-amber-500 font-mono">"Camp"</span> in the chat to trigger the Bonfire state manually.
+                  {language === 'EN' 
+                    ? <span>Use the command <span className="text-amber-500 font-mono">"Rest"</span> or <span className="text-amber-500 font-mono">"Camp"</span> in the chat.</span>
+                    : <span>Ketik perintah <span className="text-amber-500 font-mono">"Istirahat"</span> atau <span className="text-amber-500 font-mono">"Kemah"</span> di chat.</span>
+                  }
                </p>
                <div className="text-xs text-slate-600 bg-slate-950 p-3 rounded border border-slate-800 mx-auto max-w-sm">
-                  Tip: Resting restores HP and Willpower, but allows time for enemies to move.
+                  {language === 'EN' ? "Tip: Resting restores HP and Willpower, but allows time for enemies to move." : "Tips: Istirahat memulihkan HP dan Tekad, namun musuh dapat bergerak saat kamu tidur."}
                </div>
             </div>
          );
@@ -92,11 +177,13 @@ const ModalManager: React.FC<ModalManagerProps> = ({
 
   const getTitle = () => {
      switch(activeModal) {
-        case 'INVENTORY': return 'Belongings';
-        case 'SKILLS': return 'Mastery';
-        case 'MAP': return 'Known World';
-        case 'PARTY': return 'Companions';
-        case 'CAMP': return 'Campfire';
+        case 'INVENTORY': return t.modal_inventory;
+        case 'SKILLS': return t.modal_skills;
+        case 'MAP': return t.modal_map;
+        case 'PARTY': return t.modal_party;
+        case 'CAMP': return t.modal_camp;
+        case 'SMITHING': return t.modal_forge;
+        case 'SHOP': return t.modal_shop;
         default: return '';
      }
   };
@@ -104,7 +191,7 @@ const ModalManager: React.FC<ModalManagerProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
       <div 
-        className="relative w-full max-w-3xl bg-slate-900 border border-amber-900/40 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm flex flex-col max-h-[80vh]"
+        className="relative w-full max-w-4xl bg-slate-900 border border-amber-900/40 shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-sm flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
