@@ -1,14 +1,16 @@
 import React from 'react';
-import { Skill, Character } from '../types';
+import { Skill, Character, Language } from '../types';
 import { SKILL_TREE } from '../constants';
-import { Lock, Zap, CheckCircle, ChevronRight, Shield, Brain, Heart, Eye } from 'lucide-react';
+import { Lock, Zap, CheckCircle, Shield, Brain, Heart, Eye } from 'lucide-react';
+import { getLocName, getLocDesc } from '../utils/textUtils';
 
 interface SkillModalProps {
   character: Character;
   onLearnSkill: (skillId: string) => void;
+  language?: Language;
 }
 
-const SkillModal: React.FC<SkillModalProps> = ({ character, onLearnSkill }) => {
+const SkillModal: React.FC<SkillModalProps> = ({ character, onLearnSkill, language = 'EN' }) => {
   const { progression, unlockedSkills, level } = character;
 
   const getSkillState = (skill: Skill) => {
@@ -32,23 +34,23 @@ const SkillModal: React.FC<SkillModalProps> = ({ character, onLearnSkill }) => {
 
   return (
     <div className="flex flex-col h-[500px]">
-       {/* Header Stats */}
        <div className="flex justify-between items-center mb-6 bg-slate-950 p-4 rounded border border-slate-800">
           <div>
-             <span className="text-xs text-slate-500 uppercase tracking-widest font-cinzel">Current Level</span>
+             <span className="text-xs text-slate-500 uppercase tracking-widest font-cinzel">Level</span>
              <div className="text-2xl text-stone-200 font-cinzel font-bold">{level}</div>
           </div>
           <div className="text-right">
-             <span className="text-xs text-slate-500 uppercase tracking-widest font-cinzel">Skill Points</span>
+             <span className="text-xs text-slate-500 uppercase tracking-widest font-cinzel">SP</span>
              <div className="text-2xl text-amber-500 font-cinzel font-bold">{progression.skillPoints}</div>
           </div>
        </div>
 
-       {/* Skill Grid */}
        <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              {SKILL_TREE.map(skill => {
                 const state = getSkillState(skill);
+                const skillName = getLocName(skill, language as Language);
+                const skillDesc = getLocDesc(skill, language as Language);
                 
                 let containerClass = "p-4 rounded border flex flex-col gap-2 transition-all duration-300 relative overflow-hidden group";
                 let iconClass = "p-2 rounded-full mb-2 w-fit ";
@@ -62,7 +64,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ character, onLearnSkill }) => {
                       containerClass += " bg-slate-900 border-stone-400 hover:border-amber-400 cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.5)]";
                       iconClass += " bg-slate-800 text-stone-200 border border-slate-600 group-hover:bg-amber-900/20 group-hover:text-amber-400";
                       break;
-                   case 'AFFORDABLE_LOCKED': // Level met, Prereq met, but no SP
+                   case 'AFFORDABLE_LOCKED':
                        containerClass += " bg-slate-900 border-slate-700 opacity-80";
                        iconClass += " bg-slate-800 text-slate-500 border border-slate-700";
                        break;
@@ -83,19 +85,19 @@ const SkillModal: React.FC<SkillModalProps> = ({ character, onLearnSkill }) => {
 
                       <div>
                          <h4 className={`font-cinzel font-bold ${state === 'LEARNED' ? 'text-amber-500' : 'text-stone-300'}`}>
-                            {skill.name}
+                            {skillName}
                          </h4>
                          <p className="text-xs text-slate-500 italic mt-1 font-crimson">
-                            {skill.description}
+                            {skillDesc}
                          </p>
                       </div>
 
                       <div className="mt-auto pt-3 flex justify-between items-center border-t border-slate-800/50">
                          <div className="text-[10px] text-slate-500 uppercase tracking-wider">
                             {state === 'LOCKED' && skill.prerequisiteId ? (
-                               <span className="text-red-900">Req: {SKILL_TREE.find(s=>s.id === skill.prerequisiteId)?.name}</span>
+                               <span className="text-red-900">Req: {getLocName(SKILL_TREE.find(s=>s.id === skill.prerequisiteId), language as Language)}</span>
                             ) : (
-                               <span>Level {skill.requiredLevel}</span>
+                               <span>Lvl {skill.requiredLevel}</span>
                             )}
                          </div>
                          
@@ -108,7 +110,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ character, onLearnSkill }) => {
                             </button>
                          )}
                          {state === 'AFFORDABLE_LOCKED' && (
-                             <span className="text-xs text-red-700 font-bold">{skill.cost} SP Required</span>
+                             <span className="text-xs text-red-700 font-bold">{skill.cost} SP</span>
                          )}
                       </div>
                    </div>

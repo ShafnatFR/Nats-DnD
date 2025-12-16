@@ -2,6 +2,11 @@
 export type Sender = 'DM' | 'Player' | 'System';
 export type Language = 'EN' | 'ID';
 
+export interface LocalizedString {
+  EN: string;
+  ID: string;
+}
+
 export interface Message {
   id: string;
   sender: Sender;
@@ -29,8 +34,8 @@ export interface DerivedStats {
 
 export interface Trait {
   id: string;
-  name: string;
-  description: string;
+  name: LocalizedString;
+  description: LocalizedString;
   effectDescription: string;
   modifiers: {
     stats?: Partial<Stats>;
@@ -55,8 +60,8 @@ export type NodeType = 'SAFE' | 'DANGER' | 'TOWN' | 'DUNGEON';
 
 export interface LocationNode {
   id: string;
-  name: string;
-  description: string;
+  name: LocalizedString;
+  description: LocalizedString;
   type: NodeType;
   x: number;
   y: number;
@@ -65,9 +70,9 @@ export interface LocationNode {
 
 export interface Companion {
   id: string;
-  name: string;
+  name: string; // NPC Names are proper nouns
   class: string;
-  description: string;
+  description: LocalizedString;
   hp: number;
   maxHp: number;
   loyalty: number;
@@ -78,7 +83,7 @@ export interface Companion {
 export interface EnvironmentState {
   time: TimeOfDay;
   weather: WeatherType;
-  locationName: string;
+  locationName: string; // Snapshot of current lang name
   turnCount: number;
 }
 
@@ -91,9 +96,9 @@ export interface SurvivalStats {
 
 export interface Item {
   id: string;
-  name: string;
+  name: LocalizedString;
   type: ItemType;
-  description: string;
+  description: LocalizedString;
   icon: string;
   quantity: number;
   price: number;
@@ -124,8 +129,8 @@ export interface UpgradeCost {
 
 export interface Skill {
   id: string;
-  name: string;
-  description: string;
+  name: LocalizedString;
+  description: LocalizedString;
   cost: number;
   requiredLevel: number;
   prerequisiteId?: string;
@@ -138,13 +143,13 @@ export interface Skill {
 // --- COMBAT TYPES ---
 export interface Enemy {
   id: string;
-  name: string;
-  description: string;
+  name: LocalizedString;
+  description: LocalizedString;
   level: number;
   hp: number;
   maxHp: number;
   stats: Stats; 
-  attacks: { name: string; damage: number; text: string }[];
+  attacks: { name: string; damage: number; text: LocalizedString }[];
   xpReward: number;
   lootTable: string[]; // ID Item
   icon: string; // 'skull', 'ghost', 'wolf', etc.
@@ -154,7 +159,7 @@ export type CombatPhase = 'PLAYER_TURN' | 'ENEMY_TURN' | 'VICTORY' | 'DEFEAT';
 
 export interface Character {
   name: string;
-  class: string;
+  class: LocalizedString;
   level: number;
   hp: number;
   maxHp: number;
@@ -182,8 +187,8 @@ export interface Character {
 
 export interface CharacterClassDef {
   id: string;
-  name: string;
-  description: string;
+  name: LocalizedString;
+  description: LocalizedString;
   baseHp: number;
   baseMp: number;
   baseWill: number; 

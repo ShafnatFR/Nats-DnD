@@ -1,8 +1,8 @@
-
 import React from 'react';
 import { Item, Language } from '../types';
 import { Coins, ShoppingBag, ArrowLeft, ArrowRight, Wallet } from 'lucide-react';
 import { UI_TRANSLATIONS } from '../constants';
+import { getLocName } from '../utils/textUtils';
 
 interface ShopModalProps {
   playerGold: number;
@@ -31,11 +31,10 @@ const ShopModal: React.FC<ShopModalProps> = ({ playerGold, inventory, shopItems,
                <div key={`${item.id}-${idx}`} className="bg-slate-900/80 border border-slate-800 p-3 rounded flex justify-between items-center group hover:border-amber-700 transition-colors">
                   <div className="flex items-center gap-3">
                      <div className="w-10 h-10 bg-slate-950 rounded flex items-center justify-center text-stone-400">
-                        {/* Simple placeholder icon if logic not passed, but we can assume generic shape */}
                         <div className="w-6 h-6 bg-stone-700/50 rounded-full" />
                      </div>
                      <div>
-                        <div className="font-cinzel text-stone-200 font-bold text-sm">{item.name}</div>
+                        <div className="font-cinzel text-stone-200 font-bold text-sm">{getLocName(item, language as Language)}</div>
                         <div className="text-[10px] text-slate-500 uppercase">{item.type}</div>
                      </div>
                   </div>
@@ -83,7 +82,7 @@ const ShopModal: React.FC<ShopModalProps> = ({ playerGold, inventory, shopItems,
                         <div className="w-6 h-6 bg-stone-800/50 rounded-full" />
                      </div>
                      <div>
-                        <div className="font-cinzel text-stone-300 font-bold text-sm">{item.name}</div>
+                        <div className="font-cinzel text-stone-300 font-bold text-sm">{getLocName(item, language as Language)}</div>
                         <div className="text-[10px] text-slate-500">x{item.quantity}</div>
                      </div>
                   </div>

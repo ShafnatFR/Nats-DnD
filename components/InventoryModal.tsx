@@ -1,8 +1,8 @@
-
 import React, { useState } from 'react';
 import { Item, EquipSlot, Language } from '../types';
 import { Sword, Shield, Bandage, Beef, Anvil, Gem, Ghost, Trash2, Hand, Droplets, User, Shirt, Crown, X } from 'lucide-react';
 import { UI_TRANSLATIONS } from '../constants';
+import { getLocName, getLocDesc } from '../utils/textUtils';
 
 interface InventoryModalProps {
   inventory: Item[];
@@ -15,7 +15,6 @@ interface InventoryModalProps {
   language?: Language;
 }
 
-// Helper to render dynamic icons based on string name
 const getIcon = (iconName: string, className: string) => {
   switch (iconName) {
     case 'sword': return <Sword className={className} />;
@@ -56,12 +55,11 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ inventory, equipment, g
                <div className="text-slate-700 opacity-50">{icon}</div>
             )}
             
-            {/* Unequip Button */}
             {item && (
                <button 
                   onClick={(e) => { e.stopPropagation(); onUnequip(slot); }}
                   className="absolute -top-2 -right-2 bg-slate-950 border border-slate-600 rounded-full p-1 text-slate-400 hover:text-red-500 hover:border-red-500 transition-colors z-10"
-                  title="Unequip"
+                  title={t.btn_unequip}
                >
                   <X size={10} />
                </button>
@@ -74,34 +72,21 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ inventory, equipment, g
 
   return (
     <div className="flex flex-col lg:flex-row h-[600px] gap-6">
-      
-      {/* LEFT: Equipment Paper Doll */}
       <div className="w-full lg:w-1/3 flex flex-col items-center bg-slate-950/50 p-4 rounded border border-slate-800">
          <h3 className="text-xs uppercase tracking-widest text-slate-500 font-cinzel mb-6 flex items-center gap-2">
             <User size={14} /> Equipment
          </h3>
-         
          <div className="relative flex flex-col items-center gap-4 w-full max-w-[200px]">
-            {/* Head */}
             {renderEquipSlot('HEAD', 'Head', <Crown size={24} />)}
-
             <div className="flex justify-between w-full gap-4">
-               {/* Main Hand */}
-               {renderEquipSlot('MAIN_HAND', 'Main Hand', <Sword size={24} />)}
-               
-               {/* Body (Center) */}
-               {renderEquipSlot('BODY', 'Torso', <Shirt size={24} />)}
-
-               {/* Off Hand */}
-               {renderEquipSlot('OFF_HAND', 'Off Hand', <Shield size={24} />)}
+               {renderEquipSlot('MAIN_HAND', 'Main', <Sword size={24} />)}
+               {renderEquipSlot('BODY', 'Body', <Shirt size={24} />)}
+               {renderEquipSlot('OFF_HAND', 'Off', <Shield size={24} />)}
             </div>
-
-            {/* Accessory */}
             {renderEquipSlot('ACCESSORY', 'Relic', <Gem size={24} />)}
          </div>
       </div>
 
-      {/* MIDDLE: Inventory Grid */}
       <div className="flex-1 flex flex-col">
         <div className="mb-2 flex justify-between items-end px-1">
            <h3 className="text-xs uppercase tracking-widest text-slate-500 font-cinzel">{t.stats_bag}</h3>
@@ -138,7 +123,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ inventory, equipment, g
         </div>
       </div>
 
-      {/* RIGHT: Detail Panel */}
       <div className="lg:w-72 bg-slate-900 border border-amber-900/30 rounded p-5 flex flex-col relative overflow-hidden shrink-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(120,53,15,0.15),transparent_70%)] pointer-events-none"></div>
 
@@ -154,16 +138,15 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ inventory, equipment, g
             </div>
 
             <h2 className="text-xl font-cinzel text-center font-bold text-stone-200 mb-2 leading-tight">
-              {selectedItem.name}
+              {getLocName(selectedItem, language as Language)} {selectedItem.upgradeLevel ? `+${selectedItem.upgradeLevel}` : ''}
             </h2>
             
             <div className="h-px w-1/2 bg-gradient-to-r from-transparent via-amber-900/50 to-transparent mx-auto mb-4"></div>
 
             <p className="text-sm font-crimson text-stone-400 italic mb-6 text-center leading-relaxed">
-              "{selectedItem.description}"
+              "{getLocDesc(selectedItem, language as Language)}"
             </p>
 
-            {/* Stat Modifiers Display */}
             {selectedItem.equipProps?.modifiers && (
                <div className="mb-4 text-center">
                   <div className="text-[10px] uppercase tracking-widest text-slate-500 mb-1">Effects</div>
@@ -180,7 +163,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ inventory, equipment, g
             )}
 
             <div className="mt-auto space-y-3 relative z-10">
-              {/* Context Action Button */}
               {selectedItem.equipProps ? (
                  <button
                    onClick={() => onEquip(selectedItem)}
